@@ -3,7 +3,20 @@ import joblib
 import pandas as pd
 import numpy as np
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
+
+# 1. Initialize the app exactly ONCE
+app = FastAPI(title="Credit Wise Loan Approval API")
+
+# 2. Add CORS middleware immediately
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allows your React app to connect
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ─── LOAD ARTIFACTS ───
 try:
@@ -12,13 +25,12 @@ try:
     ohe = joblib.load("artifacts/ohe.pkl")
     le_edu = joblib.load("artifacts/label_encoder.pkl")
     
-    # Load JSON using the json library to avoid KeyError: 91
     with open("artifacts/feature_columns.json", "r") as f:
         feat_cols = json.load(f)
 except Exception as e:
     print(f"Error loading artifacts: {e}")
 
-app = FastAPI(title="Credit Wise Loan Approval API")
+# (Notice the duplicate 'app = FastAPI...' is completely gone from here)
 
 # ─── DATA MODEL ───
 class LoanApplication(BaseModel):
@@ -48,15 +60,11 @@ def home():
 @app.post("/predict")
 def predict_loan(data: LoanApplication):
     try:
-        # 1. Convert input to DataFrame
         input_dict = data.model_dump()
         input_df = pd.DataFrame([input_dict])
         
-        # 2. Pre-process: Label Encoding (Education)
-        # Note: We use .transform. If a label is unknown, it will trigger the ValueError
         input_df["Education_Level"] = le_edu.transform(input_df["Education_Level"])
         
-        # 3. Pre-process: One-Hot Encoding
         cat_cols = ["Employment_Status", "Marital_Status", "Loan_Purpose", 
                     "Property_Area", "Gender", "Employer_Category"]
         
@@ -65,18 +73,12 @@ def predict_loan(data: LoanApplication):
                                   columns=ohe.get_feature_names_out(cat_cols), 
                                   index=input_df.index)
         
-        # 4. Combine and Reindex
-        # Drop original categorical columns and add encoded ones
         final_df = pd.concat([input_df.drop(columns=cat_cols), encoded_df], axis=1)
-        
-        # Match the exact 28 features used during training
         final_df = final_df.reindex(columns=feat_cols, fill_value=0)
         
-        # 5. Scale
         scaled_data = scaler.transform(final_df)
         
-        # 6. Predict
-        prediction = xgb_model_pred = model.predict(scaled_data)[0]
+        prediction = model.predict(scaled_data)[0]
         probability = model.predict_proba(scaled_data)[0][1]
         
         return {

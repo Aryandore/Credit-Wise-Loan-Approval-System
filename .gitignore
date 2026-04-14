@@ -1,0 +1,15 @@
+# Environments
+venv/
+env/
+.env
+
+# Python compilation files
+__pycache__/
+*.pyc
+
+# IDEs
+.vscode/
+.idea/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
