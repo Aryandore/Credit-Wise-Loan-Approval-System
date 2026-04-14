@@ -1,5 +1,6 @@
 import json
 import joblib
+import shap
 import pandas as pd
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -27,6 +28,9 @@ try:
     
     with open("artifacts/feature_columns.json", "r") as f:
         feat_cols = json.load(f)
+    
+    explainer = shap.TreeExplainer(model)
+
 except Exception as e:
     print(f"Error loading artifacts: {e}")
 
@@ -81,9 +85,18 @@ def predict_loan(data: LoanApplication):
         prediction = model.predict(scaled_data)[0]
         probability = model.predict_proba(scaled_data)[0][1]
         
+        shap_values = explainer.shap_values(scaled_data)
+       
+        contributions = dict(zip(feat_cols, shap_values[0]))
+        sorted_reasons = sorted(contributions.items(), key=lambda x: x[1])
+        
+        top_factor_raw = sorted(contributions.items(), key=lambda x: abs(x[1]), reverse=True)[0][0]
+        top_factor_clean = top_factor_raw.replace("_", " ")
+
         return {
             "loan_approved": "Yes" if int(prediction) == 1 else "No",
             "approval_probability": round(float(probability), 4),
+            "top_factor": top_factor_clean,
             "status": "Success"
         }
 
